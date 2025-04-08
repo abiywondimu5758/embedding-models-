@@ -41,8 +41,8 @@ if sentence:
         elif model_type == "FastText":
             model_static = FastText(sentences, vector_size=50, window=2, min_count=1)
         elif model_type == "GloVe":
-            glove_file = '/home/abiy/Documents/assignments/Embedding/glove.6B.100d.txt'
-            word2vec_glove_file = '/home/abiy/Documents/assignments/Embedding/glove.6B.100d.word2vec.txt'
+            glove_file = '/home/abiy/Documents/assignments/glove.6B/glove.6B.100d.txt'
+            word2vec_glove_file = '/home/abiy/Documents/assignments/glove.6B/glove.6B.100d.word2vec.txt'
             if not os.path.exists(word2vec_glove_file):
                 glove2word2vec(glove_file, word2vec_glove_file)
             model_static = KeyedVectors.load_word2vec_format(word2vec_glove_file, binary=False)
@@ -51,8 +51,14 @@ if sentence:
         word_vectors = []
         token_list = []
         for word in tokens:
-            if word in model_static.wv:
-                vec = model_static.wv[word]
+            vec = None
+            if model_type in ("Word2Vec", "FastText"):
+                if word in model_static.wv:
+                    vec = model_static.wv[word]
+            elif model_type == "GloVe":
+                if word in model_static:
+                    vec = model_static[word]
+            if vec is not None:
                 word_vectors.append(vec)
                 token_list.append(word)
             else:
