@@ -16,12 +16,16 @@ from streamlit_lottie import st_lottie
 if not hasattr(torch._classes, '__path__'):
     torch._classes.__path__ = []
 
+# --- Page Title & Description ---
 st.title("Animated Visualization: Internal Computations in Word Embedding Models")
 st.markdown("""
 This demo visualizes the internal computations of different word embedding models.
+
 - **Static Models (Word2Vec, FastText, GloVe):** Process text with fixed embeddings.
 - **Contextual Models (BERT, GPT):** Use dynamic, context-aware embeddings via transformers.
-Use the sidebar to select a model and compare side by side! Supports sentences or paragraphs.
+
+Use the sidebar to select a model and compare side by side!
+Each simulation highlights improvements between models using animated flow diagrams and interactive visualizations.
 """)
 
 # --- Helper Functions for Animations and Lottie Integration ---
@@ -47,92 +51,198 @@ def animate_progress(label: str, duration: float = 2.0):
         progress_placeholder.markdown(f"**{label}: {progress_percent}%**")
     progress_placeholder.empty()
 
-# --- Model-Specific Simulation Functions ---
+# --- Model-Specific Simulation Functions with Enhanced Annotations ---
 
-def simulate_word2vec(sentences):
-    """Simulate Word2Vec: token-by-token processing, sentence by sentence."""
+def simulate_word2vec(sentences, window_size):
+    """Simulate Word2Vec with dynamic window size: shows each token with its context based on window size."""
     placeholder = st.empty()
-    flow = ""
-    for i, tokens in enumerate(sentences, 1):
-        sentence_flow = ""
-        for token in tokens:
-            sentence_flow += token + " → "
-            flow = f"**Processing Sentence {i}:** {sentence_flow}"
-            placeholder.markdown(flow)
-            time.sleep(0.3)
-        flow += f"(End of Sentence {i}) → "
-    placeholder.markdown(f"**Final Sequence:** {flow[:-3]}")
+    simulation_steps = []
+    for tokens in sentences:
+        for j, token in enumerate(tokens):
+            start = max(0, j - window_size)
+            end = min(len(tokens), j + window_size + 1)
+            # Exclude the current token from its context window
+            context = tokens[start:j] + tokens[j+1:end]
+            simulation_steps.append(f"{token} -> {context}")
+            placeholder.markdown(" | ".join(simulation_steps) + " _(processing...)_")
+            time.sleep(0.5)
+        simulation_steps.append("(End of Sentence)")
+    placeholder.markdown(f"**Final Simulation:** {' | '.join(simulation_steps)}")
 
 def simulate_fasttext(sentences):
-    """Simulate FastText: token-level with subword splitting, sentence by sentence."""
+    """Simulate FastText using a unified timeline with visual separators.
+    
+    FastText processes each token and, if the token is longer than 4 characters,
+    it splits it into subword components. This function builds a continuous flow
+    of processed tokens, separating sentences with a graphical marker.
+    """
     placeholder = st.empty()
-    for i, tokens in enumerate(sentences, 1):
-        st.markdown(f"**Sentence {i}:**")
+    flow_lines = []  # This list holds the processed output for each sentence
+    
+    for tokens in sentences:
+        sentence_flow = []  # Hold processed tokens for the current sentence
         for token in tokens:
             if len(token) > 4:
                 mid = len(token) // 2
                 sub1, sub2 = token[:mid], token[mid:]
-                placeholder.markdown(f"**{token}** → *Subwords:* `{sub1}` + `##{sub2}`")
+                # Represent the transformation in a concise manner:
+                # e.g. "amazing" becomes: **amazing**→[`ama`,`##zing`]
+                sentence_flow.append(f"**{token}**→[`{sub1}`,`##{sub2}`]")
             else:
-                placeholder.markdown(f"**{token}** → *No subword splitting needed*")
+                sentence_flow.append(f"**{token}**(no split)")
+            # Update the placeholder with current processing state
+            placeholder.markdown(" ".join(flow_lines + sentence_flow))
             time.sleep(0.6)
+        
+        # Append the processed sentence to the overall flow with a visual separator
+        flow_lines.append(" ".join(sentence_flow))
+        flow_lines.append("🔻🔻🔻")  # Graphical separator between sentences
+    
+    # Remove the last separator if present
+    if flow_lines and flow_lines[-1] == "🔻🔻🔻":
+        flow_lines = flow_lines[:-1]
+    
+    final_flow = " ".join(flow_lines)
+    placeholder.markdown(final_flow)
+
 
 def simulate_glove(sentences):
-    """Simulate GloVe: global context of all sentences first, then token extraction."""
-    placeholder = st.empty()
-    full_text = " ".join(" ".join(tokens) for tokens in sentences)
-    placeholder.markdown(f"**Global Context Processed:** _{full_text}_")
-    time.sleep(1.5)
-    for i, tokens in enumerate(sentences, 1):
-        st.markdown(f"**Extracting from Sentence {i}:**")
-        for token in tokens:
-            placeholder.markdown(f"**Global Context Extraction:** *Found token:* `{token}`")
-            time.sleep(0.4)
+    """Simulate GloVe: Global context extraction and token extraction with an animated moving effect.
+    
+    GloVe builds a global context from the full text, then extracts tokens from it, unlike
+    other models (Word2Vec, FastText, BERT, GPT) that process tokens sequentially or via subword splits.
+    This simulation visually moves tokens from the global context to an extraction line.
+    """
+    # Create separate placeholders for global context and extracted tokens
+    placeholder_global = st.empty()
+    placeholder_extracted = st.empty()
+    
+    # Flatten sentences into a list and retain sentence boundaries (for optional separators)
+    tokens_all = []
+    sentence_boundaries = []  # indices where a sentence ends
+    count = 0
+    for tokens in sentences:
+        tokens_all.extend(tokens)
+        count += len(tokens)
+        sentence_boundaries.append(count)
+    
+    # Display the full global context
+    global_context = " ".join([f"`{token}`" for token in tokens_all])
+    placeholder_global.markdown(f"**Global Context:** {global_context}")
+    
+    st.info("Unlike other models that process tokens one-by-one (Word2Vec/GPT) or use subword and bidirectional techniques (FastText/BERT),\nGloVe first builds a global context from all text, then extracts tokens based on overall co-occurrence.")
+    time.sleep(2)
+    
+    # Prepare for animated extraction: duplicate the token list so we can remove tokens as they're extracted.
+    remaining_tokens = tokens_all.copy()
+    extracted_tokens = []  # tokens that have been "extracted"
+    
+    # Iterate over tokens to simulate extraction (moving one token at a time)
+    for index, token in enumerate(tokens_all):
+        # Remove the token from remaining_tokens (simulate extraction)
+        if token in remaining_tokens:  # safety check
+            remaining_tokens.remove(token)
+        
+        # Update the global context display with the remaining tokens
+        updated_global = " ".join([f"`{t}`" for t in remaining_tokens])
+        placeholder_global.markdown(f"**Global Context:** {updated_global}")
+        
+        # Add the extracted token (simulate movement by appending with an arrow)
+        extracted_tokens.append(f"`{token}`")
+        # If this token is the end of a sentence, add a graphical separator to emphasize boundary
+        if (index + 1) in sentence_boundaries:
+            extracted_tokens.append("↘")
+        extraction_line = " → ".join(extracted_tokens)
+        placeholder_extracted.markdown(f"**Extracted Tokens:** {extraction_line}")
+        
+        time.sleep(0.5)
+    
+    st.success("GloVe processing complete!")
+
 
 def simulate_bert(sentences):
-    """Simulate BERT: subword tokenization and bidirectional processing for all sentences."""
+    """Simulate BERT: enhanced subword tokenization and bidirectional processing.
+    
+    BERT's approach splits longer tokens into subwords, then processes the entire
+    sequence bidirectionally. Unlike sequential models (Word2Vec, GPT) or models that
+    use only simple subword splitting (FastText), BERT incorporates both left and right
+    context simultaneously for a more robust understanding.
+    """
     placeholder = st.empty()
-    processed_tokens = []
+    annotated_flow = []  # List to hold the evolving processing flow.
+    
+    # Process each sentence, building a continuous flow.
     for tokens in sentences:
+        sentence_flow = []
         for token in tokens:
             if len(token) > 4:
+                # Split token into subwords for tokens longer than 4 characters.
                 mid = len(token) // 2
-                processed_tokens.extend([token[:mid], "##" + token[mid:]])
+                sub1, sub2 = token[:mid], "##" + token[mid:]
+                sentence_flow.append(f"**{token}** → [ {sub1} | {sub2} ]")
             else:
-                processed_tokens.append(token)
-        processed_tokens.append("[SEP]")
-    processed_tokens = processed_tokens[:-1]
-    placeholder.markdown(f"**BERT Tokenization (with subwords):** {', '.join(processed_tokens)}")
+                sentence_flow.append(f"**{token}**")
+            # Update placeholder for an animated effect.
+            placeholder.markdown("  |  ".join(annotated_flow + sentence_flow))
+            time.sleep(0.3)
+        # Append processed sentence flow and add a sentence separator.
+        annotated_flow.extend(sentence_flow)
+        annotated_flow.append("[SEP]")
+    
+    # Remove the last sentence separator, if present.
+    if annotated_flow and annotated_flow[-1] == "[SEP]":
+        annotated_flow.pop()
+    
+    # Final tokenization flow display.
+    placeholder.markdown(f"**BERT Tokenization Flow:**\n{' → '.join(annotated_flow)}")
     time.sleep(1)
-    left_context = " ".join(["←"] * len(processed_tokens))
-    right_context = " ".join(["→"] * len(processed_tokens))
-    placeholder.markdown(f"**Left Context:** {left_context}")
+    
+    # Build a visual representation of bidirectional context.
+    left_context = " ".join(["←"] * len(annotated_flow))
+    right_context = " ".join(["→"] * len(annotated_flow))
+    
+    # Display the bidirectional processing with context arrows.
+    placeholder.markdown(
+        f"**Bidirectional Context Visualization:**\n\n"
+        f"**Left Context:** {left_context}\n"
+        f"**Right Context:** {right_context}\n\n"
+        f"**Final BERT Processing:** {' → '.join(annotated_flow)}"
+    )
     time.sleep(0.8)
-    placeholder.markdown(f"**Right Context:** {right_context}")
-    time.sleep(0.8)
-    placeholder.markdown(f"**Bidirectional Processing for:** {', '.join(processed_tokens)}")
+    
+    # Informative note that compares BERT with other models.
+    st.info(
+        "BERT sets itself apart by employing bidirectional attention, meaning it processes "
+        "the full input sequence (both left and right contexts) simultaneously. This leads to "
+        "a richer understanding of word usage compared to one-directional models like GPT or the "
+        "token-by-token approaches in Word2Vec and FastText. Its use of subword tokenization also "
+        "effectively handles rare or misspelled words, making BERT more robust for diverse language tasks."
+    )
 
 def simulate_gpt(sentences):
-    """Simulate GPT: left-to-right generation across sentences."""
+    """Simulate GPT: Left-to-right sequential generation annotated step-by-step."""
     placeholder = st.empty()
     generated = ""
     for i, tokens in enumerate(sentences, 1):
         st.markdown(f"**Generating Sentence {i}:**")
         for token in tokens:
             generated += token + " "
-            placeholder.markdown(f"**Generating Left-to-Right:** {generated}")
+            placeholder.markdown(f"**Progress:** {generated} _(left-to-right generation)_")
             time.sleep(0.3)
-        generated += " "
+        generated += " "  # Separate sentences
 
-# --- Sidebar Model Selection and Input ---
+# --- Sidebar Model Selection & Input ---
 
 st.sidebar.markdown("## Configuration")
 model_type = st.sidebar.selectbox("Select Model Type", 
                                   ("Word2Vec", "FastText", "GloVe", "BERT", "GPT"))
+# Add configuration for Word2Vec window size
+if model_type == "Word2Vec":
+    window_size = st.sidebar.slider("Window Size", min_value=1, max_value=10, value=2, step=1)
 input_text = st.sidebar.text_area("Enter text (sentence or paragraph):",
                                   "The quick brown fox jumps over the lazy dog. It runs fast.")
 
-# --- Comparison Section ---
+# --- Side-by-Side Comparison Section with Explanatory Panels ---
 
 if st.sidebar.button("Compare Model Computations"):
     st.markdown("## Side-by-Side Comparison of Internal Computations")
@@ -144,29 +254,30 @@ if st.sidebar.button("Compare Model Computations"):
     
     with col_static:
         st.header("Static Model: Word2Vec")
-        st.markdown("**Simulated Process:** Token-by-token processing")
+        st.markdown("**Process:** Token-by-token simple processing")
         if lottie_token_flow:
             st_lottie(lottie_token_flow, height=150, key="static_lottie")
-        animate_progress("Processing Static Model", 1.5)
-        simulate_word2vec(sentences)
-        # Simulated t-SNE plot
+        animate_progress("Static Model Processing", 1.5)
+        simulate_word2vec(sentences, window_size)
+        # Simulated t-SNE plot with annotations
         tokens = [token for s in sentences for token in s]
         dummy_vectors = [np.random.rand(50) for _ in tokens]
         tsne = TSNE(n_components=2, perplexity=5, random_state=42)
         tsne_results = tsne.fit_transform(np.array(dummy_vectors))
         fig_static = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
-                                title="Simulated Word2Vec Embedding Space",
-                                labels={"x": "Dim 1", "y": "Dim 2"})
+                                title="Word2Vec Embedding Space",
+                                labels={"x": "Dim 1", "y": "Dim 2"},
+                                hover_data={"Token": tokens})
         st.plotly_chart(fig_static, use_container_width=True)
     
     with col_contextual:
         st.header("Contextual Model: BERT")
-        st.markdown("**Simulated Process:** Bidirectional processing with subword tokenization")
+        st.markdown("**Process:** Bidirectional processing with enhanced subword tokenization")
         if lottie_attention:
             st_lottie(lottie_attention, height=150, key="contextual_lottie")
-        animate_progress("Processing Contextual Model", 1.5)
+        animate_progress("Contextual Model Processing", 1.5)
         simulate_bert(sentences)
-        # Simulated t-SNE plot
+        # Prepare processed tokens for t-SNE plot
         processed_tokens = []
         for tokens in sentences:
             for token in tokens:
@@ -176,18 +287,20 @@ if st.sidebar.button("Compare Model Computations"):
                 else:
                     processed_tokens.append(token)
             processed_tokens.append("[SEP]")
-        processed_tokens = processed_tokens[:-1]
+        if processed_tokens and processed_tokens[-1] == "[SEP]":
+            processed_tokens = processed_tokens[:-1]
         dummy_vectors = [np.random.rand(50) for _ in processed_tokens]
         tsne_context = TSNE(n_components=2, perplexity=5, random_state=42)
         tsne_results_context = tsne_context.fit_transform(np.array(dummy_vectors))
         fig_context = px.scatter(x=tsne_results_context[:, 0], y=tsne_results_context[:, 1], text=processed_tokens,
-                                 title="Simulated BERT Embedding Space",
-                                 labels={"x": "Dim 1", "y": "Dim 2"})
+                                 title="BERT Embedding Space",
+                                 labels={"x": "Dim 1", "y": "Dim 2"},
+                                 hover_data={"Sub-token": processed_tokens})
         st.plotly_chart(fig_context, use_container_width=True)
     
     st.success("Side-by-side simulation complete!")
 
-# --- Single Model Processing ---
+# --- Single Model Processing Section with Detailed Visualizations ---
 
 if input_text:
     st.markdown("## Single Model Processing")
@@ -197,37 +310,37 @@ if input_text:
     else:
         st.subheader(f"Processing with {model_type}")
         if model_type == "Word2Vec":
-            st.markdown("**Simulated Process:** Token-by-token processing")
+            st.markdown("**Process:** Simple token-by-token processing with window size " + str(window_size))
             if lottie_token_flow:
                 st_lottie(lottie_token_flow, height=150, key="word2vec_lottie")
             animate_progress("Processing", 2.0)
-            simulate_word2vec(sentences)
+            simulate_word2vec(sentences, window_size)
         elif model_type == "FastText":
-            st.markdown("**Simulated Process:** Token-level with subword splitting")
+            st.markdown("**Process:** Token-level processing with subword splitting")
             if lottie_token_flow:
                 st_lottie(lottie_token_flow, height=150, key="fasttext_lottie")
             animate_progress("Processing", 2.0)
             simulate_fasttext(sentences)
         elif model_type == "GloVe":
-            st.markdown("**Simulated Process:** Global context extraction")
+            st.markdown("**Process:** Global context extraction followed by token extraction")
             if lottie_token_flow:
                 st_lottie(lottie_token_flow, height=150, key="glove_lottie")
             animate_progress("Processing", 2.0)
             simulate_glove(sentences)
         elif model_type == "BERT":
-            st.markdown("**Simulated Process:** Bidirectional processing with subword tokenization")
+            st.markdown("**Process:** Bidirectional processing with subword tokenization")
             if lottie_attention:
                 st_lottie(lottie_attention, height=150, key="bert_lottie")
             animate_progress("Processing", 2.0)
             simulate_bert(sentences)
         elif model_type == "GPT":
-            st.markdown("**Simulated Process:** Left-to-right generation")
+            st.markdown("**Process:** Sequential left-to-right generation")
             if lottie_attention:
                 st_lottie(lottie_attention, height=150, key="gpt_lottie")
             animate_progress("Processing", 2.0)
             simulate_gpt(sentences)
         
-        # Simulated t-SNE plot for the selected model
+        # Simulated t-SNE Plot for the Selected Model with Additional Info
         st.subheader(f"Simulated Embedding Visualization for {model_type}")
         if model_type in ("Word2Vec", "FastText", "GloVe"):
             tokens = [token for s in sentences for token in s]
@@ -242,25 +355,28 @@ if input_text:
                         tokens.append(token)
                 if model_type == "BERT":
                     tokens.append("[SEP]")
-            if model_type == "BERT":
+            if model_type == "BERT" and tokens and tokens[-1] == "[SEP]":
                 tokens = tokens[:-1]
         dummy_vectors = [np.random.rand(50) for _ in tokens]
         tsne = TSNE(n_components=2, perplexity=5, random_state=42)
         tsne_results = tsne.fit_transform(np.array(dummy_vectors))
         fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
                          title=f"Simulated {model_type} Embedding Space",
-                         labels={"x": "Dimension 1", "y": "Dimension 2"})
+                         labels={"x": "Dimension 1", "y": "Dimension 2"},
+                         hover_data={"Token": tokens})
         st.plotly_chart(fig, use_container_width=True)
 
-        # Optional: Actual embeddings (kept from original code, simplified)
+        # Optional: Display Actual Embedding Visualizations for Deep Models
         if model_type in ("Word2Vec", "FastText"):
             sentences_flat = [token for s in sentences for token in s]
-            model_static = Word2Vec([sentences_flat], vector_size=50, window=2, min_count=1, sg=1) if model_type == "Word2Vec" else FastText([sentences_flat], vector_size=50, window=2, min_count=1)
+            model_static = Word2Vec([sentences_flat], vector_size=50, window=window_size, min_count=1, sg=1) \
+                            if model_type == "Word2Vec" else FastText([sentences_flat], vector_size=50, window=2, min_count=1)
             word_vectors = [model_static.wv[token] for token in sentences_flat if token in model_static.wv]
             if word_vectors:
                 tsne = TSNE(n_components=2, perplexity=5, random_state=42)
                 tsne_results = tsne.fit_transform(np.array(word_vectors))
-                fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=[token for token in sentences_flat if token in model_static.wv],
+                fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1],
+                                 text=[token for token in sentences_flat if token in model_static.wv],
                                  title=f"Actual {model_type} Embedding Visualization",
                                  labels={"x": "Dimension 1", "y": "Dimension 2"})
                 st.plotly_chart(fig, use_container_width=True)
@@ -274,7 +390,8 @@ if input_text:
             token_labels = tokenizer.tokenize(input_text)
             num_vis = min(10, len(token_labels))
             tsne_context = TSNE(n_components=2, perplexity=5, random_state=42).fit_transform(token_embeds[:num_vis])
-            fig = px.scatter(x=tsne_context[:, 0], y=tsne_context[:, 1], text=token_labels[:num_vis],
+            fig = px.scatter(x=tsne_context[:, 0], y=tsne_context[:, 1],
+                             text=token_labels[:num_vis],
                              title=f"Actual {model_type} Contextual Embedding Visualization",
                              labels={"x": "Dimension 1", "y": "Dimension 2"})
             st.plotly_chart(fig, use_container_width=True)
