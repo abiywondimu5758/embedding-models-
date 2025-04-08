@@ -53,8 +53,10 @@ def animate_progress(label: str, duration: float = 2.0):
 
 # --- Model-Specific Simulation Functions with Enhanced Annotations ---
 
-def simulate_word2vec(sentences, window_size):
-    """Simulate Word2Vec with dynamic window size: shows each token with its context based on window size."""
+def simulate_word2vec(sentences, window_size, vector_size):
+    """Simulate Word2Vec with dynamic window size and adjustable vector dimensions.
+    Displays each token with its context and annotates the simulated vector dimension.
+    """
     placeholder = st.empty()
     simulation_steps = []
     for tokens in sentences:
@@ -63,48 +65,46 @@ def simulate_word2vec(sentences, window_size):
             end = min(len(tokens), j + window_size + 1)
             # Exclude the current token from its context window
             context = tokens[start:j] + tokens[j+1:end]
-            simulation_steps.append(f"{token} -> {context}")
+            simulation_steps.append(f"{token} -> {context} (Vec d={vector_size})")
             placeholder.markdown(" | ".join(simulation_steps) + " _(processing...)_")
             time.sleep(0.5)
         simulation_steps.append("(End of Sentence)")
     placeholder.markdown(f"**Final Simulation:** {' | '.join(simulation_steps)}")
 
-def simulate_fasttext(sentences):
-    """Simulate FastText using a unified timeline with visual separators.
+def simulate_fasttext(sentences, window_size, vector_size, min_n, max_n):
+    """Simulate FastText with dynamic window size, adjustable vector dimensions, and subword extraction.
     
-    FastText processes each token and, if the token is longer than 4 characters,
-    it splits it into subword components. This function builds a continuous flow
-    of processed tokens, separating sentences with a graphical marker.
+    For each token, compute its actual context words (using window_size) and 
+    break the token into all n-grams where the n-gram length is from min_n to max_n.
     """
     placeholder = st.empty()
-    flow_lines = []  # This list holds the processed output for each sentence
-    
+    flow_lines = []  # Holds processed output for all sentences
     for tokens in sentences:
-        sentence_flow = []  # Hold processed tokens for the current sentence
-        for token in tokens:
-            if len(token) > 4:
-                mid = len(token) // 2
-                sub1, sub2 = token[:mid], token[mid:]
-                # Represent the transformation in a concise manner:
-                # e.g. "amazing" becomes: **amazing**→[`ama`,`##zing`]
-                sentence_flow.append(f"**{token}**→[`{sub1}`,`##{sub2}`]")
+        sentence_flow = []  # Holds processed tokens for the current sentence
+        for j, token in enumerate(tokens):
+            # Compute context words based on window_size
+            start = max(0, j - window_size)
+            end = min(len(tokens), j + window_size + 1)
+            context = tokens[start:j] + tokens[j+1:end]
+            context_str = ", ".join(context)
+            # Compute subwords (n-grams) if token is long enough, else mark no split.
+            if len(token) >= min_n:
+                ngrams = []
+                for n in range(min_n, max_n + 1):
+                    for i in range(len(token) - n + 1):
+                        ngrams.append(token[i:i+n])
+                subword_str = ", ".join(ngrams)
+                sentence_flow.append(f"**{token}**→[{subword_str}] | Context: [{context_str}] (Vec d={vector_size})")
             else:
-                sentence_flow.append(f"**{token}**(no split)")
-            # Update the placeholder with current processing state
-            placeholder.markdown(" ".join(flow_lines + sentence_flow))
+                sentence_flow.append(f"**{token}**(no split) | Context: [{context_str}] (Vec d={vector_size})")
+            placeholder.markdown(" ".join(flow_lines + sentence_flow) + " _(processing...)_")
             time.sleep(0.6)
-        
-        # Append the processed sentence to the overall flow with a visual separator
         flow_lines.append(" ".join(sentence_flow))
-        flow_lines.append("🔻🔻🔻")  # Graphical separator between sentences
-    
-    # Remove the last separator if present
+        flow_lines.append("🔻🔻🔻")  # Separator between sentences
     if flow_lines and flow_lines[-1] == "🔻🔻🔻":
         flow_lines = flow_lines[:-1]
-    
     final_flow = " ".join(flow_lines)
     placeholder.markdown(final_flow)
-
 
 def simulate_glove(sentences):
     """Simulate GloVe: Global context extraction and token extraction with an animated moving effect.
@@ -236,9 +236,17 @@ def simulate_gpt(sentences):
 st.sidebar.markdown("## Configuration")
 model_type = st.sidebar.selectbox("Select Model Type", 
                                   ("Word2Vec", "FastText", "GloVe", "BERT", "GPT"))
-# Add configuration for Word2Vec window size
-if model_type == "Word2Vec":
+# Update sidebar configuration to support both Word2Vec and FastText:
+if model_type in ("Word2Vec", "FastText"):
     window_size = st.sidebar.slider("Window Size", min_value=1, max_value=10, value=2, step=1)
+    vector_size = st.sidebar.slider("Vector Size", min_value=10, max_value=300, value=50, step=10)
+    if model_type == "FastText":
+        min_n = st.sidebar.slider("Min n", min_value=1, max_value=10, value=3, step=1)
+        max_n = st.sidebar.slider("Max n", min_value=1, max_value=15, value=6, step=1)
+if model_type == "GloVe":
+    glove_vector_size = st.sidebar.selectbox("Glove Vector Size", options=[50, 100, 200, 300], index=1)
+else:
+    vector_size = 50  # default for other models
 input_text = st.sidebar.text_area("Enter text (sentence or paragraph):",
                                   "The quick brown fox jumps over the lazy dog. It runs fast.")
 
@@ -254,14 +262,15 @@ if st.sidebar.button("Compare Model Computations"):
     
     with col_static:
         st.header("Static Model: Word2Vec")
-        st.markdown("**Process:** Token-by-token simple processing")
+        st.markdown("**Process:** Token-by-token simple processing with window size " + str(window_size) +
+                    " and vector size " + str(vector_size))
         if lottie_token_flow:
             st_lottie(lottie_token_flow, height=150, key="static_lottie")
         animate_progress("Static Model Processing", 1.5)
-        simulate_word2vec(sentences, window_size)
+        simulate_word2vec(sentences, window_size, vector_size)
         # Simulated t-SNE plot with annotations
         tokens = [token for s in sentences for token in s]
-        dummy_vectors = [np.random.rand(50) for _ in tokens]
+        dummy_vectors = [np.random.rand(vector_size) for _ in tokens]
         tsne = TSNE(n_components=2, perplexity=5, random_state=42)
         tsne_results = tsne.fit_transform(np.array(dummy_vectors))
         fig_static = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
@@ -310,23 +319,26 @@ if input_text:
     else:
         st.subheader(f"Processing with {model_type}")
         if model_type == "Word2Vec":
-            st.markdown("**Process:** Simple token-by-token processing with window size " + str(window_size))
+            st.markdown("**Process:** Simple token-by-token processing with window size " + str(window_size) +
+                        " and vector size " + str(vector_size))
             if lottie_token_flow:
                 st_lottie(lottie_token_flow, height=150, key="word2vec_lottie")
             animate_progress("Processing", 2.0)
-            simulate_word2vec(sentences, window_size)
+            simulate_word2vec(sentences, window_size, vector_size)
         elif model_type == "FastText":
             st.markdown("**Process:** Token-level processing with subword splitting")
             if lottie_token_flow:
                 st_lottie(lottie_token_flow, height=150, key="fasttext_lottie")
             animate_progress("Processing", 2.0)
-            simulate_fasttext(sentences)
+            simulate_fasttext(sentences, window_size, vector_size, min_n, max_n)
         elif model_type == "GloVe":
-            st.markdown("**Process:** Global context extraction followed by token extraction")
+            st.markdown("**Process:** Global context extraction followed by token extraction (Actual GloVe Embedding)")
             if lottie_token_flow:
                 st_lottie(lottie_token_flow, height=150, key="glove_lottie")
             animate_progress("Processing", 2.0)
             simulate_glove(sentences)
+            # Optionally, run the simulation for visual effect
+            
         elif model_type == "BERT":
             st.markdown("**Process:** Bidirectional processing with subword tokenization")
             if lottie_attention:
@@ -357,7 +369,11 @@ if input_text:
                     tokens.append("[SEP]")
             if model_type == "BERT" and tokens and tokens[-1] == "[SEP]":
                 tokens = tokens[:-1]
-        dummy_vectors = [np.random.rand(50) for _ in tokens]
+        # Use glove_vector_size if GloVe, else use vector_size
+        if model_type == "GloVe":
+            dummy_vectors = [np.random.rand(glove_vector_size) for _ in tokens]
+        else:
+            dummy_vectors = [np.random.rand(vector_size) for _ in tokens]
         tsne = TSNE(n_components=2, perplexity=5, random_state=42)
         tsne_results = tsne.fit_transform(np.array(dummy_vectors))
         fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
@@ -369,8 +385,8 @@ if input_text:
         # Optional: Display Actual Embedding Visualizations for Deep Models
         if model_type in ("Word2Vec", "FastText"):
             sentences_flat = [token for s in sentences for token in s]
-            model_static = Word2Vec([sentences_flat], vector_size=50, window=window_size, min_count=1, sg=1) \
-                            if model_type == "Word2Vec" else FastText([sentences_flat], vector_size=50, window=2, min_count=1)
+            model_static = Word2Vec([sentences_flat], vector_size=vector_size, window=window_size, min_count=1, sg=1) \
+                            if model_type == "Word2Vec" else FastText([sentences_flat], vector_size=vector_size, window=window_size, min_count=1, min_n=2,max_n=5)
             word_vectors = [model_static.wv[token] for token in sentences_flat if token in model_static.wv]
             if word_vectors:
                 tsne = TSNE(n_components=2, perplexity=5, random_state=42)
@@ -380,6 +396,31 @@ if input_text:
                                  title=f"Actual {model_type} Embedding Visualization",
                                  labels={"x": "Dimension 1", "y": "Dimension 2"})
                 st.plotly_chart(fig, use_container_width=True)
+            # NEW: Print the vector of the first two words to show dimension changes
+            
+            keys = list(model_static.wv.key_to_index.keys())
+            if len(keys) >= 2:
+                st.write("First word:", keys[0], "embedding:", model_static.wv[keys[0]].tolist())
+                st.write("Second word:", keys[1], "embedding:", model_static.wv[keys[1]].tolist())
+        elif model_type == "GloVe":
+            glove_file = f'/home/abiy/Documents/assignments/glove.6B/glove.6B.{glove_vector_size}d.txt'
+            glove_word2vec_file = f'/home/abiy/Documents/assignments/glove.6B/glove.6B.{glove_vector_size}d.word2vec.txt'
+            if not os.path.exists(glove_word2vec_file):
+                glove2word2vec(glove_file, glove_word2vec_file)
+            glove_model = KeyedVectors.load_word2vec_format(glove_word2vec_file, binary=False)
+            # Retrieve actual embeddings for all tokens (ignoring tokens not in the GloVe vocabulary)
+            tokens = [token for s in sentences for token in s]
+            glove_vectors = [glove_model[token] for token in tokens if token in glove_model]
+            if glove_vectors:
+                tsne = TSNE(n_components=2, perplexity=5, random_state=42)
+                tsne_results = tsne.fit_transform(np.array(glove_vectors))
+                fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
+                                 title="Actual GloVe Embedding Space",
+                                 labels={"x": "Dim 1", "y": "Dim 2"},
+                                 hover_data={"Token": tokens})
+                st.plotly_chart(fig, use_container_width=True)
+            st.write("GloVe Example Vector for first word:",
+                     glove_model[list(glove_model.key_to_index.keys())[0]].tolist())
         elif model_type in ("BERT", "GPT"):
             model_name = 'bert-base-uncased' if model_type == "BERT" else 'gpt2'
             tokenizer = AutoTokenizer.from_pretrained(model_name)
