@@ -1,18 +1,28 @@
 # streamlit_app/app.py
 import streamlit as st
+import asyncio
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
 from transformers import AutoTokenizer, AutoModel
 from gensim.models import Word2Vec, FastText
 import plotly.express as px
 from sklearn.manifold import TSNE
 import numpy as np
 import torch
+if not hasattr(torch._classes, '__path__'):
+    torch._classes.__path__ = []  # monkey-patch to avoid __path__ access error
+import os
+from gensim.models import KeyedVectors
+from gensim.scripts.glove2word2vec import glove2word2vec
 
 st.title("Interactive Word Embeddings Demo")
 st.markdown("This interactive demo shows how different embedding models process text, including tokenization, subword splitting, and vector visualization using Plotly.")
 
 # Sidebar model selector
 model_type = st.sidebar.selectbox("Select Model Type", 
-                                  ("Word2Vec", "FastText", "BERT", "GPT"))
+                                  ("Word2Vec", "FastText", "GloVe", "BERT", "GPT"))
 
 # Input sentence
 sentence = st.text_input("Enter a sentence:", "The quick brown fox jumps over the lazy dog.")
@@ -23,13 +33,19 @@ if sentence:
     tokens = sentence.lower().split()
     st.write(tokens)
 
-    # === For static models: Word2Vec and FastText ===
-    if model_type in ("Word2Vec", "FastText"):
+    # === For static models: Word2Vec, FastText, and GloVe ===
+    if model_type in ("Word2Vec", "FastText", "GloVe"):
         sentences = [tokens]  # Toy dataset using the input sentence
         if model_type == "Word2Vec":
             model_static = Word2Vec(sentences, vector_size=50, window=2, min_count=1, sg=1)
-        else:
+        elif model_type == "FastText":
             model_static = FastText(sentences, vector_size=50, window=2, min_count=1)
+        elif model_type == "GloVe":
+            glove_file = '/home/abiy/Documents/assignments/Embedding/glove.6B.100d.txt'
+            word2vec_glove_file = '/home/abiy/Documents/assignments/Embedding/glove.6B.100d.word2vec.txt'
+            if not os.path.exists(word2vec_glove_file):
+                glove2word2vec(glove_file, word2vec_glove_file)
+            model_static = KeyedVectors.load_word2vec_format(word2vec_glove_file, binary=False)
 
         # Gather embeddings for each token
         word_vectors = []
@@ -47,7 +63,7 @@ if sentence:
 
         # Interactive t-SNE visualization with Plotly
         if word_vectors:
-            tsne = TSNE(n_components=2, random_state=0)
+            tsne = TSNE(n_components=2, perplexity=5, random_state=42)
             tsne_results = tsne.fit_transform(np.array(word_vectors))
             fig = px.scatter(x=tsne_results[:,0], y=tsne_results[:,1], text=token_list,
                              title=f"t-SNE Visualization of {model_type} Embeddings",
@@ -77,7 +93,7 @@ if sentence:
         num_tokens_vis = min(10, outputs.last_hidden_state.shape[1])
         token_embeds = outputs.last_hidden_state[0][:num_tokens_vis].detach().numpy()
         token_labels = tokens_sub[:num_tokens_vis]
-        tsne_context = TSNE(n_components=2, random_state=0).fit_transform(token_embeds)
+        tsne_context = TSNE(n_components=2, perplexity=5, random_state=42).fit_transform(token_embeds)
         fig2 = px.scatter(x=tsne_context[:,0], y=tsne_context[:,1], text=token_labels,
                           title=f"t-SNE Visualization of {model_type} Contextual Embeddings",
                           labels={"x": "Dimension 1", "y": "Dimension 2"})
