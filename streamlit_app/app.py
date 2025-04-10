@@ -110,91 +110,96 @@ def simulate_glove(sentences):
     """Simulate GloVe: Global context extraction and token extraction with an animated moving effect.
     
     GloVe builds a global context from the full text, then extracts tokens from it, unlike
-    other models (Word2Vec, FastText, BERT, GPT) that process tokens sequentially or via subword splits.
+    other models that process tokens sequentially or via subword splits.
     This simulation visually moves tokens from the global context to an extraction line.
+    Additionally, a co-occurrence matrix is computed and displayed as an actual matrix using px.
     """
-    # Create separate placeholders for global context and extracted tokens
     placeholder_global = st.empty()
     placeholder_extracted = st.empty()
     
-    # Flatten sentences into a list and retain sentence boundaries (for optional separators)
     tokens_all = []
-    sentence_boundaries = []  # indices where a sentence ends
+    sentence_boundaries = []
     count = 0
     for tokens in sentences:
         tokens_all.extend(tokens)
         count += len(tokens)
         sentence_boundaries.append(count)
     
-    # Display the full global context
     global_context = " ".join([f"`{token}`" for token in tokens_all])
     placeholder_global.markdown(f"**Global Context:** {global_context}")
     
-    st.info("Unlike other models that process tokens one-by-one (Word2Vec/GPT) or use subword and bidirectional techniques (FastText/BERT),\nGloVe first builds a global context from all text, then extracts tokens based on overall co-occurrence.")
+    st.info("GloVe builds a global context from all text and then extracts tokens based on overall co-occurrence.")
     time.sleep(2)
     
-    # Prepare for animated extraction: duplicate the token list so we can remove tokens as they're extracted.
     remaining_tokens = tokens_all.copy()
-    extracted_tokens = []  # tokens that have been "extracted"
-    
-    # Iterate over tokens to simulate extraction (moving one token at a time)
+    extracted_tokens = []
     for index, token in enumerate(tokens_all):
-        # Remove the token from remaining_tokens (simulate extraction)
-        if token in remaining_tokens:  # safety check
+        if token in remaining_tokens:
             remaining_tokens.remove(token)
-        
-        # Update the global context display with the remaining tokens
         updated_global = " ".join([f"`{t}`" for t in remaining_tokens])
         placeholder_global.markdown(f"**Global Context:** {updated_global}")
-        
-        # Add the extracted token (simulate movement by appending with an arrow)
         extracted_tokens.append(f"`{token}`")
-        # If this token is the end of a sentence, add a graphical separator to emphasize boundary
         if (index + 1) in sentence_boundaries:
             extracted_tokens.append("↘")
         extraction_line = " → ".join(extracted_tokens)
         placeholder_extracted.markdown(f"**Extracted Tokens:** {extraction_line}")
-        
         time.sleep(0.5)
     
     st.success("GloVe processing complete!")
-
+    
+    # NEW: Compute the actual co-occurrence matrix
+    unique_tokens = sorted(set([token for tokens in sentences for token in tokens]))
+    co_occurrence = np.zeros((len(unique_tokens), len(unique_tokens)), dtype=int)
+    for tokens in sentences:
+        for i, token in enumerate(tokens):
+            for j, token2 in enumerate(tokens):
+                if i != j:
+                    row = unique_tokens.index(token)
+                    col = unique_tokens.index(token2)
+                    co_occurrence[row, col] += 1
+    
+    # Display the co-occurrence matrix as an actual matrix using px.imshow
+    fig_co = px.imshow(co_occurrence,
+                       x=unique_tokens,
+                       y=unique_tokens,
+                       text_auto=True,
+                       color_continuous_scale="Blues",
+                       title="Actual Co-occurrence Matrix")
+    st.plotly_chart(fig_co, use_container_width=True)
 
 def simulate_bert(sentences):
-    """Simulate BERT: enhanced subword tokenization and bidirectional processing.
+    """Simulate BERT: enhanced subword tokenization and bidirectional processing with attention visualization.
     
     BERT's approach splits longer tokens into subwords, then processes the entire
-    sequence bidirectionally. Unlike sequential models (Word2Vec, GPT) or models that
-    use only simple subword splitting (FastText), BERT incorporates both left and right
-    context simultaneously for a more robust understanding.
+    sequence bidirectionally. This simulation includes attention visualization for each token.
     """
     placeholder = st.empty()
-    annotated_flow = []  # List to hold the evolving processing flow.
+    annotated_flow = []  # To hold the evolving processing flow with attention info
     
-    # Process each sentence, building a continuous flow.
+    # Enhanced simulation: display tokens with subword splitting (for long tokens) and simulated bidirectional attention.
     for tokens in sentences:
         sentence_flow = []
-        for token in tokens:
+        for idx, token in enumerate(tokens):
+            # Simulate attention strength: more arrows for tokens in earlier positions (left) and later positions (right)
+            left_attn = "←" * (idx + 1)
+            right_attn = "→" * (len(tokens) - idx)
             if len(token) > 4:
-                # Split token into subwords for tokens longer than 4 characters.
+                # Split token into two parts and show with attention indicators
                 mid = len(token) // 2
-                sub1, sub2 = token[:mid], "##" + token[mid:]
-                sentence_flow.append(f"**{token}** → [ {sub1} | {sub2} ]")
+                sub1 = token[:mid]
+                sub2 = "##" + token[mid:]
+                sentence_flow.append(f"**{token}** [{left_attn}|{right_attn}] → [ {sub1} | {sub2} ]")
             else:
-                sentence_flow.append(f"**{token}**")
-            # Update placeholder for an animated effect.
-            placeholder.markdown("  |  ".join(annotated_flow + sentence_flow))
+                sentence_flow.append(f"**{token}** [{left_attn}|{right_attn}]")
+            placeholder.markdown("  |  ".join(annotated_flow + sentence_flow) + " _(processing...)_")
             time.sleep(0.3)
-        # Append processed sentence flow and add a sentence separator.
         annotated_flow.extend(sentence_flow)
         annotated_flow.append("[SEP]")
     
-    # Remove the last sentence separator, if present.
     if annotated_flow and annotated_flow[-1] == "[SEP]":
         annotated_flow.pop()
-    
-    # Final tokenization flow display.
-    placeholder.markdown(f"**BERT Tokenization Flow:**\n{' → '.join(annotated_flow)}")
+    # Final display showing the enhanced tokenization and simulated bidirectional attention flow.
+    placeholder.markdown(f"**Enhanced BERT Tokenization & Attention Flow:**\n{' → '.join(annotated_flow)}")
     time.sleep(1)
     
     # Build a visual representation of bidirectional context.
@@ -220,16 +225,23 @@ def simulate_bert(sentences):
     )
 
 def simulate_gpt(sentences):
-    """Simulate GPT: Left-to-right sequential generation annotated step-by-step."""
+    """Simulate GPT: Left-to-right sequential generation annotated step-by-step.
+    
+    This enhanced simulation shows incremental token generation with simulated probability scores.
+    """
     placeholder = st.empty()
-    generated = ""
-    for i, tokens in enumerate(sentences, 1):
-        st.markdown(f"**Generating Sentence {i}:**")
+    final_generation = ""
+    for i, tokens in enumerate(sentences, start=1):
+        st.markdown(f"**Generating Sentence {i}**")
+        generated = ""
         for token in tokens:
+            prob = np.round(np.random.rand(), 2)  # Simulate a probability for token generation
             generated += token + " "
-            placeholder.markdown(f"**Progress:** {generated} _(left-to-right generation)_")
+            placeholder.markdown(f"**Progress:** {generated} _(Simulated Prob: {prob})_")
             time.sleep(0.3)
-        generated += " "  # Separate sentences
+        final_generation += generated + " "
+        placeholder.markdown(f"**Final Generated Text:** {final_generation}")
+        time.sleep(0.5)
 
 # --- Sidebar Model Selection & Input ---
 
