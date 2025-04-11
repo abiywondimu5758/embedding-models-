@@ -7,6 +7,7 @@ from gensim.models import Word2Vec, FastText
 from gensim.models import KeyedVectors
 from gensim.scripts.glove2word2vec import glove2word2vec
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA  # New import for PCA
 import torch
 import os
 import requests
@@ -208,12 +209,27 @@ def simulate_gpt(sentences):
         placeholder.markdown(f"**Final Generated Text:** {final_generation}")
         time.sleep(0.5)
 
+# --- Dimensionality Reduction Function ---
+
+def reduce_dimensions(vectors, method="TSNE"):
+    if method == "UMAP":
+        reducer = umap.UMAP(n_components=2, random_state=42)
+        return reducer.fit_transform(np.array(vectors))
+    elif method == "PCA":  # New branch for PCA reduction
+        pca = PCA(n_components=2)
+        return pca.fit_transform(np.array(vectors))
+    else:
+        tsne = TSNE(n_components=2, perplexity=5, random_state=42)
+        return tsne.fit_transform(np.array(vectors))
+
 # --- Sidebar Model Selection & Input ---
 
 st.sidebar.markdown("## Configuration")
 model_type = st.sidebar.selectbox("Select Model Type", 
                                   ("Word2Vec", "FastText", "GloVe", "BERT", "GPT"))
+# reduction_method = st.sidebar.selectbox("Reduction Method", ("TSNE", "UMAP", "PCA"))  # Updated options
 # Set default values for parameters used by simulate_fasttext
+reduction_method = "TSNE"
 min_n = 3
 max_n = 6
 if model_type in ("Word2Vec", "FastText"):
@@ -232,6 +248,8 @@ else:
     glove_vector_size = None
 input_text = st.sidebar.text_area("Enter text (sentence or paragraph):",
                                   "The quick brown fox jumps over the lazy dog. It runs fast.")
+# NEW: Visualization type selection
+visualization_type = st.sidebar.selectbox("Visualization Type", ("Scatter", "Dimension Graph"))
 
 # --- Side-by-Side Comparison Section with Explanatory Panels ---
 
@@ -264,9 +282,8 @@ if st.sidebar.button("Compare Model Computations"):
         simulate_word2vec(sentences, window_size, vector_size)
         tokens = [token for s in sentences for token in s]
         dummy_vectors = [np.random.rand(vector_size) for _ in tokens]
-        tsne = TSNE(n_components=2, perplexity=5, random_state=42)
-        tsne_results = tsne.fit_transform(np.array(dummy_vectors))
-        fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
+        reduced_results = reduce_dimensions(dummy_vectors, method=reduction_method)
+        fig = px.scatter(x=reduced_results[:, 0], y=reduced_results[:, 1], text=tokens,
                          title="Word2Vec Embedding Space",
                          labels={"x": "Dim 1", "y": "Dim 2"},
                          hover_data={"Token": tokens})
@@ -278,9 +295,8 @@ if st.sidebar.button("Compare Model Computations"):
         simulate_fasttext(sentences, window_size, vector_size, min_n, max_n)
         tokens = [token for s in sentences for token in s]
         dummy_vectors = [np.random.rand(vector_size) for _ in tokens]
-        tsne = TSNE(n_components=2, perplexity=5, random_state=42)
-        tsne_results = tsne.fit_transform(np.array(dummy_vectors))
-        fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
+        reduced_results = reduce_dimensions(dummy_vectors, method=reduction_method)
+        fig = px.scatter(x=reduced_results[:, 0], y=reduced_results[:, 1], text=tokens,
                          title="FastText Embedding Space",
                          labels={"x": "Dim 1", "y": "Dim 2"},
                          hover_data={"Token": tokens})
@@ -294,9 +310,8 @@ if st.sidebar.button("Compare Model Computations"):
         # Use glove_vector_size if defined, otherwise fallback to vector_size
         dim = glove_vector_size if glove_vector_size is not None else vector_size
         dummy_vectors = [np.random.rand(dim) for _ in tokens]
-        tsne = TSNE(n_components=2, perplexity=5, random_state=42)
-        tsne_results = tsne.fit_transform(np.array(dummy_vectors))
-        fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
+        reduced_results = reduce_dimensions(dummy_vectors, method=reduction_method)
+        fig = px.scatter(x=reduced_results[:, 0], y=reduced_results[:, 1], text=tokens,
                          title="GloVe Embedding Space",
                          labels={"x": "Dim 1", "y": "Dim 2"},
                          hover_data={"Token": tokens})
@@ -318,9 +333,8 @@ if st.sidebar.button("Compare Model Computations"):
         if processed_tokens and processed_tokens[-1] == "[SEP]":
             processed_tokens = processed_tokens[:-1]
         dummy_vectors = [np.random.rand(50) for _ in processed_tokens]
-        tsne = TSNE(n_components=2, perplexity=5, random_state=42)
-        tsne_results = tsne.fit_transform(np.array(dummy_vectors))
-        fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=processed_tokens,
+        reduced_results = reduce_dimensions(dummy_vectors, method=reduction_method)
+        fig = px.scatter(x=reduced_results[:, 0], y=reduced_results[:, 1], text=processed_tokens,
                          title="BERT Embedding Space",
                          labels={"x": "Dim 1", "y": "Dim 2"},
                          hover_data={"Sub-token": processed_tokens})
@@ -332,9 +346,8 @@ if st.sidebar.button("Compare Model Computations"):
         simulate_gpt(sentences)
         tokens = [token for s in sentences for token in s]
         dummy_vectors = [np.random.rand(vector_size) for _ in tokens]
-        tsne = TSNE(n_components=2, perplexity=5, random_state=42)
-        tsne_results = tsne.fit_transform(np.array(dummy_vectors))
-        fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
+        reduced_results = reduce_dimensions(dummy_vectors, method=reduction_method)
+        fig = px.scatter(x=reduced_results[:, 0], y=reduced_results[:, 1], text=tokens,
                          title="GPT Generation Space",
                          labels={"x": "Dim 1", "y": "Dim 2"},
                          hover_data={"Token": tokens})
@@ -386,33 +399,45 @@ if input_text:
         
         # Simulated t-SNE Plot for the Selected Model with Additional Info
         st.subheader(f"Simulated Embedding Visualization for {model_type}")
-        if model_type in ("Word2Vec", "FastText", "GloVe"):
+        if visualization_type == "Scatter":
+            if model_type in ("Word2Vec", "FastText", "GloVe"):
+                tokens = [token for s in sentences for token in s]
+            else:  # BERT or GPT
+                tokens = []
+                for s in sentences:
+                    for token in s:
+                        if len(token) > 4 and model_type == "BERT":
+                            mid = len(token) // 2
+                            tokens.extend([token[:mid], "##" + token[mid:]])
+                        else:
+                            tokens.append(token)
+                    if model_type == "BERT":
+                        tokens.append("[SEP]")
+                if model_type == "BERT" and tokens and tokens[-1] == "[SEP]":
+                    tokens = tokens[:-1]
+            # Use glove_vector_size if GloVe, else use vector_size
+            if model_type == "GloVe":
+                dummy_vectors = [np.random.rand(glove_vector_size) for _ in tokens]
+            else:
+                dummy_vectors = [np.random.rand(vector_size) for _ in tokens]
+            reduced_results = reduce_dimensions(dummy_vectors, method=reduction_method)
+            fig = px.scatter(x=reduced_results[:, 0], y=reduced_results[:, 1], text=tokens,
+                             title=f"Simulated {model_type} Embedding Space",
+                             labels={"x": "Dimension 1", "y": "Dimension 2"},
+                             hover_data={"Token": tokens})
+            st.plotly_chart(fig, use_container_width=True)
+        elif visualization_type == "Dimension Graph":
             tokens = [token for s in sentences for token in s]
-        else:  # BERT or GPT
-            tokens = []
-            for s in sentences:
-                for token in s:
-                    if len(token) > 4 and model_type == "BERT":
-                        mid = len(token) // 2
-                        tokens.extend([token[:mid], "##" + token[mid:]])
-                    else:
-                        tokens.append(token)
-                if model_type == "BERT":
-                    tokens.append("[SEP]")
-            if model_type == "BERT" and tokens and tokens[-1] == "[SEP]":
-                tokens = tokens[:-1]
-        # Use glove_vector_size if GloVe, else use vector_size
-        if model_type == "GloVe":
-            dummy_vectors = [np.random.rand(glove_vector_size) for _ in tokens]
-        else:
-            dummy_vectors = [np.random.rand(vector_size) for _ in tokens]
-        tsne = TSNE(n_components=2, perplexity=5, random_state=42)
-        tsne_results = tsne.fit_transform(np.array(dummy_vectors))
-        fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
-                         title=f"Simulated {model_type} Embedding Space",
-                         labels={"x": "Dimension 1", "y": "Dimension 2"},
-                         hover_data={"Token": tokens})
-        st.plotly_chart(fig, use_container_width=True)
+            unique_tokens = list(set(tokens))
+            selected_token = st.selectbox("Select Token", unique_tokens)
+            if model_type == "GloVe":
+                dummy_vector = np.random.rand(glove_vector_size)
+            else:
+                dummy_vector = np.random.rand(vector_size)
+            fig = px.bar(x=list(range(len(dummy_vector))), y=dummy_vector,
+                         labels={"x": "Dimension", "y": "Value"},
+                         title=f"Word Vector Dimensions for '{selected_token}'")
+            st.plotly_chart(fig, use_container_width=True)
 
         # Optional: Display Actual Embedding Visualizations for Deep Models
         if model_type in ("Word2Vec", "FastText"):
@@ -421,9 +446,8 @@ if input_text:
                             if model_type == "Word2Vec" else FastText([sentences_flat], vector_size=vector_size, window=window_size, min_count=1, min_n=2,max_n=5)
             word_vectors = [model_static.wv[token] for token in sentences_flat if token in model_static.wv]
             if word_vectors:
-                tsne = TSNE(n_components=2, perplexity=5, random_state=42)
-                tsne_results = tsne.fit_transform(np.array(word_vectors))
-                fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1],
+                reduced_results = reduce_dimensions(word_vectors, method=reduction_method)
+                fig = px.scatter(x=reduced_results[:, 0], y=reduced_results[:, 1],
                                  text=[token for token in sentences_flat if token in model_static.wv],
                                  title=f"Actual {model_type} Embedding Visualization",
                                  labels={"x": "Dimension 1", "y": "Dimension 2"})
@@ -444,9 +468,8 @@ if input_text:
             tokens = [token for s in sentences for token in s]
             glove_vectors = [glove_model[token] for token in tokens if token in glove_model]
             if glove_vectors:
-                tsne = TSNE(n_components=2, perplexity=5, random_state=42)
-                tsne_results = tsne.fit_transform(np.array(glove_vectors))
-                fig = px.scatter(x=tsne_results[:, 0], y=tsne_results[:, 1], text=tokens,
+                reduced_results = reduce_dimensions(glove_vectors, method=reduction_method)
+                fig = px.scatter(x=reduced_results[:, 0], y=reduced_results[:, 1], text=tokens,
                                  title="Actual GloVe Embedding Space",
                                  labels={"x": "Dim 1", "y": "Dim 2"},
                                  hover_data={"Token": tokens})
@@ -462,8 +485,8 @@ if input_text:
             token_embeds = outputs.last_hidden_state[0].detach().numpy()
             token_labels = tokenizer.tokenize(input_text)
             num_vis = min(10, len(token_labels))
-            tsne_context = TSNE(n_components=2, perplexity=5, random_state=42).fit_transform(token_embeds[:num_vis])
-            fig = px.scatter(x=tsne_context[:, 0], y=tsne_context[:, 1],
+            reduced_results = reduce_dimensions(token_embeds[:num_vis], method=reduction_method)
+            fig = px.scatter(x=reduced_results[:, 0], y=reduced_results[:, 1],
                              text=token_labels[:num_vis],
                              title=f"Actual {model_type} Contextual Embedding Visualization",
                              labels={"x": "Dimension 1", "y": "Dimension 2"})
